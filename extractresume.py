@@ -1,17 +1,17 @@
 from flask import Flask, request, jsonify
-from langchain.chat_models import ChatOpenAI
-from langchain.prompts import PromptTemplate
-from langchain.schema import SystemMessage, HumanMessage
+from flask_cors import CORS
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import PromptTemplate
+from langchain_core.messages import SystemMessage, HumanMessage   # << UPDATED
 import PyPDF2
 import os
 import json
 from dotenv import load_dotenv
 import redis
-from flask_cors import CORS   # << Added
 
-# Initialize Redis
+# Redis Connection
 redis_client = redis.Redis(
-    host='localhost',
+    host="localhost",
     port=6379,
     db=0,
     decode_responses=True
@@ -19,33 +19,34 @@ redis_client = redis.Redis(
 
 from patternagent import generate_question_patterns
 
+# Flask App
 app = Flask(__name__)
-CORS(
-    app,
-    resources={r"/*": {"origins": "http://localhost:3000"}},
-    supports_credentials=True,
-    allow_headers=["Content-Type", "Authorization"],
-    methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]
-)
-# Load environment variables
-load_dotenv()
-api_key = os.getenv("OPENAI_API_KEY")
 
-# Initialize LLM
+# Allow cross-domain usage **(Important for frontends hosted remotely)**
+CORS(app, supports_credentials=True)
+
+load_dotenv()
+OPENAI_KEY = os.getenv("OPENAI_API_KEY")
+
+
+# ===========================================
+#  LLM (UPDATED for new LangChain API syntax)
+# ===========================================
 llm = ChatOpenAI(
-    model_name="gpt-4o-mini",
-    openai_api_key=api_key,
+    model="gpt-4.1-mini",    # OpenAI official small-fast reasoning model
+    api_key=OPENAI_KEY,
     temperature=0.7
 )
 
+
 # ==============================
-# Helper: Extract text from PDF
+# PDF → TEXT Extractor
 # ==============================
 def extract_text_from_pdf(file):
-    pdf_reader = PyPDF2.PdfReader(file)
+    pdf = PyPDF2.PdfReader(file)
     text = ""
-    for page in pdf_reader.pages:
-        text += page.extract_text() or ""
+    for pg in pdf.pages:
+        text += pg.extract_text() or ""
     return text.strip()
 
 
@@ -55,35 +56,39 @@ def extract_text_from_pdf(file):
 prompt_template_resume = PromptTemplate(
     input_variables=["resume_text", "jd_text"],
     template="""
-You are an intelligent resume analysis agent. 
-You are given a resume (and optionally a job description). Extract:
-1. Candidate's name (if found)
-2. Total years of experience
-3. Technical skills (e.g., Java, Spring Boot, Kafka, MySQL, etc.)
-4. For each skill, provide key topics the candidate should be evaluated on based on their experience.
+You are an expert Resume Analysis AI.
+Analyze the candidate resume and extract:
 
-Return only valid JSON in this format:
+1. Name (if possible)
+2. Years of experience
+3. List of technical skills found
+4. Topics to evaluate candidate under each skill based on their experience level.
+
+Return ONLY valid JSON in format:
+
 {{
-  "candidateName": "<string>",
-  "experienceYears": <number>,
-  "userId": "<string or null>",
-  "skills": ["<skill1>", "<skill2>", ...],
+  "candidateName": "<name>",
+  "experienceYears": <int>,
+  "userId": "",
+  "skills": ["Java","Spring Boot","SQL"],
   "topicsToEvaluate": {{
-    "<skill>": ["<topic1>", "<topic2>", ...]
+      "Java": ["OOP","Collections","JVM internals"],
+      "Spring Boot": ["REST","JPA","Security"]
   }}
 }}
 
-Resume Text:
+Resume:
 {resume_text}
 
-Job Description (optional):
+Job Description:
 {jd_text}
 """
 )
 
 
 @app.route("/MpSetTopicsFromResume", methods=["POST"])
-def settopicsfromresume():
+def settopics_resume():
+
     if "resume" not in request.files:
         return jsonify({"error": "resume file is required"}), 400
 
@@ -93,166 +98,121 @@ def settopicsfromresume():
 
     resume_text = extract_text_from_pdf(resume_file)
 
-    # Use PromptTemplate.format to substitute variables
     prompt = prompt_template_resume.format(resume_text=resume_text, jd_text=jd_text or "N/A")
 
     messages = [
-        SystemMessage(content="You are a professional AI agent for resume skill extraction."),
+        SystemMessage(content="You are a Resume Skill Extraction AI."),
         HumanMessage(content=prompt)
     ]
-    response = llm.invoke(messages)
+
+    res = llm.invoke(messages)  # <—— updated method
 
     try:
-        data = response.content.strip()
-        start_idx = data.find("{")
-        end_idx = data.rfind("}") + 1
-        parsed_json = json.loads(data[start_idx:end_idx])
-        parsed_json["userId"] = user_id
-    except Exception:
-        return jsonify({"error": "Failed to parse LLM response", "raw": response.content}), 500
+        raw = res.content.strip()
+        parsed = json.loads(raw[raw.find("{"): raw.rfind("}") + 1])
+        parsed["userId"] = user_id
 
-    question_patterns = generate_question_patterns(parsed_json, llm)
+    except:
+        return jsonify({"error": "Could not parse extracted JSON", "raw": res.content}), 500
 
-    role_to_store = request.form.get("role", "")
-    exp_to_store  = request.form.get("exp", "")
+    question_patterns = generate_question_patterns(parsed, llm)
 
     payload = {
         "question": question_patterns,
-        "role": role_to_store,
-        "experience": exp_to_store,
-        "candidateName": parsed_json.get("candidateName")
+        "role": request.form.get("role",""),
+        "experience": request.form.get("exp",""),
+        "candidateName": parsed.get("candidateName")
     }
 
-    try:
-        redis_client.set(user_id, json.dumps(payload))
-        redis_client.expire(user_id, 24 * 60 * 60)
-    except Exception as e:
-        print("Redis error:", str(e))
+    redis_client.set(user_id, json.dumps(payload))
+    redis_client.expire(user_id, 86400)
 
     return question_patterns
+
 
 
 # ==============================
 # 2️⃣ MpSetTopicsFromInput
 # ==============================
 prompt_template_input = PromptTemplate(
-    input_variables=["skills", "experience", "candidateName", "userId"],
+    input_variables=["skills","experience","candidateName","userId"],
     template="""
-You are an expert technical mentor.
+You are a Technical Interview Trainer AI.
 
-The user provides:
-- Candidate name: {candidateName}
-- User ID: {userId}
-- Skills: {skills}
-- Experience (in years): {experience}
+Based on:
+Candidate: {candidateName}
+Experience: {experience} years
+Key Skills: {skills}
 
-Your task:
-Based on the provided skills and experience, list all important technical topics that the candidate should prepare for interviews.
+Generate JSON with recommended evaluation topics.
 
-Rules:
-- For Fresher → Include all beginner-level fundamentals for each skill.
-- For 1 year → Include beginner + intermediate practical topics.
-- For 2–4 years → Include intermediate + some advanced topics.
-- For 5+ years → Include advanced + architecture-level concepts.
-- Return only valid JSON (no explanations, no questions).
+Return ONLY JSON:
 
-JSON Format:
 {{
-  "candidateName": "{candidateName}",
-  "experienceYears": {experience},
-  "userId": "{userId}",
-  "skills": [{skills}],
-  "topicsToEvaluate": {{
-    "<skill>": ["<topic1>", "<topic2>", "<topic3>", ...]
-  }}
+ "candidateName":"{candidateName}",
+ "experienceYears":{experience},
+ "userId":"{userId}",
+ "skills":[{skills}],
+ "topicsToEvaluate":{{
+      "<skill>":["topic1","topic2","topic3"]
+ }}
 }}
 """
-    # note: no template_format given — default formatting is used; placeholders kept as {var}
 )
 
 
 @app.route("/MpSetTopicsFromInput", methods=["POST"])
-def settopicsfrominput():
-    data = request.get_json()
-    required = ["skills", "experience", "candidateName", "userId"]
-    if not data or not all(k in data for k in required):
-        return jsonify({"error": f"Missing required fields: {', '.join(required)}"}), 400
+def settopics_input():
 
-    skills = ", ".join(data["skills"]) if isinstance(data["skills"], list) else data["skills"]
-    experience = data["experience"]
-    candidate_name = data["candidateName"]
-    user_id = data["userId"]
+    data = request.get_json()
+    required = ["skills","experience","candidateName","userId"]
+
+    if not data or not all(k in data for k in required):
+        return jsonify({"error":"Missing required keys"}),400
+
+    skills_str = ", ".join(data["skills"]) if isinstance(data["skills"],list) else data["skills"]
 
     prompt = prompt_template_input.format(
-        skills=skills,
-        experience=experience,
-        candidateName=candidate_name,
-        userId=user_id
+        skills=skills_str,
+        experience=data["experience"],
+        candidateName=data["candidateName"],
+        userId=data["userId"]
     )
 
     messages = [
-        SystemMessage(content="You are a senior technical trainer and interview mentor."),
+        SystemMessage(content="You generate skill-wise interview topic mapping."),
         HumanMessage(content=prompt)
     ]
 
-    response = llm.invoke(messages)
+    res = llm.invoke(messages)
 
     try:
-        resp = response.content.strip()
-        start_idx = resp.find("{")
-        end_idx = resp.rfind("}") + 1
-        parsed_json = json.loads(resp[start_idx:end_idx])
-    except Exception:
-        return jsonify({"error": "Failed to parse LLM response", "raw": response.content}), 500
+        js = res.content.strip()
+        result = json.loads(js[js.find("{"): js.rfind("}") + 1])
 
-    question_patterns = generate_question_patterns(parsed_json, llm)
+    except:
+        return jsonify({"error":"LLM JSON Parse error","raw":res.content}),500
 
-    def _normalize_experience(v):
-        try:
-            if isinstance(v, (int, float)):
-                return int(round(v))
-            if isinstance(v, str):
-                import re
-                m = re.search(r"(\d+)", v)
-                if m:
-                    return int(m.group(1))
-        except:
-            pass
-        return None
-
-    def _infer_role(parsed):
-        role = parsed.get("role") or parsed.get("desiredRole")
-        if role:
-            return role
-        skills = parsed.get("skills") or []
-        if isinstance(skills, list) and len(skills) > 0:
-            return f"{skills[0]} Developer"
-        if isinstance(skills, str) and skills:
-            return f"{skills} Developer"
-        return "Developer"
-
-    role_to_store = _infer_role(parsed_json)
-    exp_to_store = _normalize_experience(parsed_json.get("experienceYears") or parsed_json.get("experience"))
+    question_patterns = generate_question_patterns(result,llm)
 
     payload = {
-        "question": question_patterns,
-        "role": role_to_store,
-        "experience": exp_to_store,
-        "candidateName": parsed_json.get("candidateName")
+        "question":question_patterns,
+        "role":result["skills"][0] + " Developer",
+        "experience":data["experience"],
+        "candidateName":result["candidateName"]
     }
 
-    try:
-        redis_client.set(user_id, json.dumps(payload))
-        redis_client.expire(user_id, 24 * 60 * 60)
-        print("stored in redis successfully")
-    except Exception as e:
-        print("Redis error:", str(e))
+    redis_client.set(data["userId"],json.dumps(payload))
+    redis_client.expire(data["userId"],86400)
 
     return question_patterns
 
 
+
 # ==============================
-# Run the App
+# Run Server 🚀
 # ==============================
 if __name__ == "__main__":
+    print("\n🔥 Interview Skill Engine Running on 0.0.0.0:8085")
     app.run(host="0.0.0.0", port=8085, debug=False)
+

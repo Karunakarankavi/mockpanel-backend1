@@ -27,6 +27,7 @@ async def handler(websocket):
 
 # ------------------- Flask API -------------------
 app = Flask(__name__)
+application = app   # AWS reads this
 CORS(app, resources={r"/*": {"origins": "http://localhost:3000"}})
 
 stopmsgtollm = False
@@ -42,6 +43,10 @@ def send_msg_api():
     response = send_msg_to_llm(user_id)
     return response
 
+@app.route("/test", methods=["POST"])
+def test():
+    return "test success"
+
 @app.route("/reconnect", methods=["POST"])
 def reconnect():
     global stopmsgtollm
@@ -50,7 +55,7 @@ def reconnect():
 
 
 def run_flask():
-    print("🚀 Flask API started at http://localhost:5001")
+    print("🚀 Flask API started at http://0.0.0.0:5001")
     app.run(host="0.0.0.0", port=5001, debug=False, use_reloader=False)
 
 
@@ -66,8 +71,8 @@ async def main():
     stt_thread = threading.Thread(target=run, daemon=True)
     stt_thread.start()
 
-    async with websockets.serve(handler, "localhost", 8001):
-        print("✅ WebSocket server started at ws://localhost:8001")
+    async with websockets.serve(handler, "0.0.0.0", 8001):
+        print("✅ WebSocket server started at ws://0.0.0.0:8001")
         await asyncio.Future()
 
 
