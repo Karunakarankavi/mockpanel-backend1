@@ -1,0 +1,74 @@
+
+# Elastic Beanstalk Files
+.elasticbeanstalk/*
+!.elasticbeanstalk/*.cfg.yml
+!.elasticbeanstalk/*.global.yml
+
+# ----- Python Cache -----
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pdb
+*.sqlite3
+
+# ----- Virtual Environments -----
+env/
+venv/
+.venv/
+ENV/
+
+# ----- IDE / Editor Files -----
+.vscode/
+.idea/
+*.swp
+
+# ----- Logs & Debug -----
+*.log
+*.out
+*.err
+
+# ----- Environment / Secrets -----
+.env
+*.env
+
+# ----- Bytecode & Build -----
+build/
+dist/
+*.egg-info/
+
+# ----- PyInstaller -----
+*.manifest
+*.spec
+
+# ----- Data & Outputs -----
+*.csv
+*.json
+*.parquet
+*.db
+*.dump
+output/
+results/
+
+# ----- Machine Learning / AI Models -----
+*.h5
+*.pth
+*.pt
+*.pkl
+*.joblib
+models/
+checkpoints/
+
+# ----- Temporary Files -----
+tmp/
+temp/
+cache/
+
+# ----- Docs / PDF -----
+*.pdf
+*.docx
+
+# ----- OS Files -----
+.DS_Store
+Thumbs.db
+
