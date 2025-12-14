@@ -95,7 +95,6 @@ def send_msg_api():
         return jsonify({"error": "userId is required"}), 400
 
     response = send_msg_to_llm(user_id)
-    print(response)
     return response
 
 @app.route("/test", methods=["POST"])

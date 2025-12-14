@@ -46,7 +46,6 @@ def ttsblend(text):
 
     # 4️⃣ Encode audio to base64 for JSON transport
     audio_base64 = base64.b64encode(response.audio_content).decode("utf-8")
-    print(duration_seconds)
     # 5️⃣ Return combined JSON
     return jsonify({
         "audioSource": audio_base64,  # frontend can decode base64 to play

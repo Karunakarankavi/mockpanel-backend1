@@ -1,16 +1,18 @@
 import PyPDF2
 import json
 import os
-from dotenv import load_dotenv
 import redis
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import PromptTemplate
 from langchain_core.messages import SystemMessage, HumanMessage
 from patternagent import generate_question_patterns
+from dotenv import load_dotenv
+
 
 # Load environment
-load_dotenv()
+load_dotenv(override=True)
 OPENAI_KEY = os.getenv("OPENAI_API_KEY")
+
 
 # Redis Connection
 redis_client = redis.Redis(

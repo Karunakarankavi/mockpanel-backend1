@@ -75,14 +75,12 @@ def send_msg_to_llm(userid):
     """
     print("llm agent starting process ")
     global user_prompt, stopmsgtollm, transcript
-    print(transcript , "transcript")
 
     # if not user_prompt.strip():
     #     return jsonify({"error": "No user prompt available"}), 400
 
     # Process with your LLM connection
     response = get_question_endpoint(transcript,userid)
-    print(user_prompt)
     user_prompt = ""
     blendtextdata = ttsblend(response.get("question"))
     stopmsgtollm = True
