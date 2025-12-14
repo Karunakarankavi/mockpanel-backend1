@@ -2,6 +2,8 @@ import asyncio
 import threading
 import websockets
 from flask import Flask, request, jsonify
+
+from extractresume import settopics_resume
 from llmconnection import process_message
 from speechtotext import send_to_assemblyai, run, send_msg_to_llm
 from flask_cors import CORS
@@ -28,11 +30,51 @@ async def handler(websocket):
 # ------------------- Flask API -------------------
 app = Flask(__name__)
 application = app   # AWS reads this
-CORS(app, resources={r"/*": {"origins": "http://localhost:3000"}})
+CORS(
+    app,
+    supports_credentials=True,
+    resources={
+        r"/api/*": {
+            "origins": "http://localhost:3000"
+        }
+    }
+)
 
 stopmsgtollm = False
 
-@app.route("/send-msg", methods=["POST"])
+
+@app.route("/api/v1/resume/topics", methods=["POST"])
+def extract_topics_from_resume():
+
+    # 1. Get form data
+    user_id = request.form.get("userId")
+    job_description = request.form.get("jobDescription")
+    resume_file = request.files.get("resume")
+
+    # 2. Validations
+    if not user_id:
+        return jsonify({"error": "userId is required"}), 400
+
+    if not job_description:
+        return jsonify({"error": "jobDescription is required"}), 400
+
+    if not resume_file:
+        return jsonify({"error": "resume PDF file is required"}), 400
+
+    if not resume_file.filename.lower().endswith(".pdf"):
+        return jsonify({"error": "Only PDF files are allowed"}), 400
+
+    response = settopics_resume(
+        user_id=user_id,
+        job_description=job_description,
+        resume_file=resume_file
+    )
+
+    return response
+
+
+
+@app.route("/api/v1/send-msg", methods=["POST"])
 def send_msg_api():
     data = request.get_json()
     user_id = data.get("userId")
@@ -41,13 +83,14 @@ def send_msg_api():
         return jsonify({"error": "userId is required"}), 400
 
     response = send_msg_to_llm(user_id)
+    print(response)
     return response
 
 @app.route("/test", methods=["POST"])
 def test():
     return "test success"
 
-@app.route("/reconnect", methods=["POST"])
+@app.route("/api/v1//reconnect", methods=["POST"])
 def reconnect():
     global stopmsgtollm
     stopmsgtollm = False
@@ -61,9 +104,6 @@ def run_flask():
 
 # ------------------- Start Both -------------------
 async def main():
-    print("⚙️ Starting extractresume.py...")
-    extract_process = subprocess.Popen(["python", "extractresume.py"])
-    time.sleep(3)
 
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()

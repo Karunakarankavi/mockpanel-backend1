@@ -221,6 +221,8 @@ def get_question_endpoint(user_answer, userid):
     role = payload.get("role")
     exp = payload.get("experience")
 
+    print("getquestion endpoint")
+
     # Initialize Question Agent if not present
     with agent_lock:
         if user_id not in agents:

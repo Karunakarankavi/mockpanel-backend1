@@ -55,8 +55,7 @@ def run_ws_thread():
     t = threading.Thread(target=lambda: asyncio.run(start_websocket()), daemon=True)
     t.start()
 
-def run_extractresume():
-    subprocess.Popen(["python", "extractresume.py"])
+
 
 def run_stt_thread():
     t = threading.Thread(target=run, daemon=True)
@@ -66,7 +65,6 @@ def run_stt_thread():
 if __name__ == "__main__":
     # Start background tasks
     run_ws_thread()
-    run_extractresume()
     run_stt_thread()
 
     # Run Flask in main thread (EB tracks this as the PID)

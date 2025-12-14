@@ -82,7 +82,7 @@ def send_msg_to_llm(userid):
 
     # Process with your LLM connection
     response = get_question_endpoint(transcript,userid)
-    print(response.get("question"))
+    print(user_prompt)
     user_prompt = ""
     blendtextdata = ttsblend(response.get("question"))
     stopmsgtollm = True
