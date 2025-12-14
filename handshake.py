@@ -9,6 +9,12 @@ from speechtotext import send_to_assemblyai, run, send_msg_to_llm
 from flask_cors import CORS
 import subprocess
 import time
+import objgraph
+import psutil
+import os
+
+process = psutil.Process(os.getpid())
+
 
 # ------------------- WebSocket Handler -------------------
 async def handler(websocket):
@@ -72,7 +78,13 @@ def extract_topics_from_resume():
 
     return response
 
-
+@app.after_request
+def track_memory(response):
+    rss_mb = process.memory_info().rss / 1024 / 1024
+    print(f"\n📊 RSS Memory: {rss_mb:.2f} MB")
+    print("📈 Object growth since last request:")
+    objgraph.show_growth(limit=10)
+    return response
 
 @app.route("/api/v1/send-msg", methods=["POST"])
 def send_msg_api():
